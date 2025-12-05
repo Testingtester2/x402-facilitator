@@ -1,10 +1,10 @@
 [package]
-name = "x402-rs"
-version = "0.10.0"
+name = "x402-facilitator"
+version = "0.11.0"
 authors = ["Sergey Ukustov <sergey@ukstv.me>"]
 edition = "2024"
 license = "Apache-2.0"
-repository = "https://github.com/x402-rs/x402-rs"
+repository = "https://github.com/second-state/x402-facilitator"
 description = "x402 payments in Rust: verify, settle, and monitor payments over HTTP 402 flows"
 readme = "README.md"
 homepage = "https://x402.rs"
@@ -54,9 +54,5 @@ telemetry = []
 
 [workspace]
 members = [
-  "crates/x402-axum",
-  "examples/x402-axum-example",
-  "crates/x402-reqwest",
-  "examples/x402-reqwest-example",
   "."
 ]
