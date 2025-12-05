@@ -5,10 +5,10 @@ authors = ["Sergey Ukustov <sergey@ukstv.me>"]
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/second-state/x402-facilitator"
-description = "x402 payments in Rust: verify, settle, and monitor payments over HTTP 402 flows"
+description = "x402 facilitator in Rust"
 readme = "README.md"
-homepage = "https://x402.rs"
-documentation = "https://docs.rs/x402-rs"
+homepage = "https://github.com/second-state/x402-facilitator"
+documentation = "https://docs.rs/x402-facilitator"
 keywords = ["blockchain", "payments", "x402", "stablecoin", "http-402"]
 categories = ["cryptography", "finance", "network-programming", "web-programming::http-server"]
 
