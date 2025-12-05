@@ -1,15 +1,12 @@
 # x402-facilitator
 
-This project is forked from x402-rs.
+This project is forked from [x402-rs](https://github.com/x402-rs/x402-rs).
 
 Our goal is to maintain a stable version and extend the functionality of the original x402 facilitator for production use, including support for additional blockchains and tokens, as well as enhanced observability features, while ensuring compatibility with the x402 protocol.
 
-# x402-rs
+===
 
-[![Crates.io](https://img.shields.io/crates/v/x402-rs.svg)](https://crates.io/crates/x402-rs)
-[![Docs.rs](https://docs.rs/x402-rs/badge.svg)](https://docs.rs/x402-rs)
-[![Docker Pulls](https://img.shields.io/docker/pulls/ukstv/x402-facilitator.svg)](https://hub.docker.com/r/ukstv/x402-facilitator)
-[![GHCR](https://img.shields.io/badge/ghcr.io-x402--facilitator-blue)](https://github.com/orgs/x402-rs/packages)
+# x402-rs
 
 > A Rust-based implementation of the x402 protocol.
 
@@ -18,84 +15,12 @@ This repository provides:
 - `x402-rs` (current crate):
   - Core protocol types, facilitator traits, and logic for on-chain payment verification and settlement
   - Facilitator binary - production-grade HTTP server to verify and settle x402 payments
-- [`x402-axum`](./crates/x402-axum) - Axum middleware for accepting x402 payments,
-- [`x402-reqwest`](./crates/x402-reqwest) - Wrapper for reqwest for transparent x402 payments,
-- [`x402-axum-example`](./examples/x402-axum-example) - an example of `x402-axum` usage.
-- [`x402-reqwest-example`](./examples/x402-reqwest-example) - an example of `x402-reqwest` usage.
 
 ## About x402
 
 The [x402 protocol](https://docs.cdp.coinbase.com/x402/docs/overview) is a proposed standard for making blockchain payments directly through HTTP using native `402 Payment Required` status code.
 
 Servers declare payment requirements for specific routes. Clients send cryptographically signed payment payloads. Facilitators verify and settle payments on-chain.
-
-## Getting Started
-
-### Run facilitator
-
-```shell
-docker run --env-file .env -p 8080:8080 ukstv/x402-facilitator
-```
-
-Or build locally:
-```shell
-docker build -t x402-rs .
-docker run --env-file .env -p 8080:8080 x402-rs
-```
-
-See the [Facilitator](#facilitator) section below for full usage details
-
-### Protect Axum Routes
-
-Use `x402-axum` to gate your routes behind on-chain payments:
-
-```rust
-let x402 = X402Middleware::try_from("https://x402.org/facilitator/").unwrap();
-let usdc = USDCDeployment::by_network(Network::BaseSepolia);
-
-let app = Router::new().route("/paid-content", get(handler).layer( 
-        x402.with_price_tag(usdc.amount("0.025").pay_to("0xYourAddress").unwrap())
-    ),
-);
-```
-
-See [`x402-axum` crate docs](./crates/x402-axum/README.md).
-
-### Send x402 payments
-
-Use `x402-reqwest` to send payments:
-
-```rust
-let signer: PrivateKeySigner = "0x...".parse()?; // never hardcode real keys!
-
-let client = reqwest::Client::new()
-    .with_payments(signer)
-    .prefer(USDCDeployment::by_network(Network::Base))
-    .max(USDCDeployment::by_network(Network::Base).amount("1.00")?)
-    .build();
-
-let res = client
-    .get("https://example.com/protected")
-    .send()
-    .await?;
-```
-
-See [`x402-reqwest` crate docs](./crates/x402-reqwest/README.md).
-
-## Roadmap
-
-| Milestone                           | Description                                                                                              |   Status   |
-|:------------------------------------|:---------------------------------------------------------------------------------------------------------|:----------:|
-| Facilitator for Base USDC           | Payment verification and settlement service, enabling real-time pay-per-use transactions for Base chain. | ✅ Complete |
-| Metrics and Tracing                 | Expose OpenTelemetry metrics and structured tracing for observability, monitoring, and debugging         | ✅ Complete |
-| Server Middleware                   | Provide ready-to-use integration for Rust web frameworks such as axum and tower.                         | ✅ Complete |
-| Client Library                      | Provide a lightweight Rust library for initiating and managing x402 payment flows from Rust clients.     | ✅ Complete |
-| Solana Support                      | Support Solana chain.                                                                                    | ✅ Complete |
-| Multiple chains and multiple tokens | Support various tokens and EVM compatible chains.                                                        | ⏳ Planned  |
-| Payment Storage                     | Persist verified and settled payments for analytics, access control, and auditability.                   | 🔜 Planned |
-| Micropayment Support                | Enable fine-grained offchain usage-based payments, including streaming and per-request billing.          | 🔜 Planned |
-
-The initial focus is on establishing a stable, production-quality Rust SDK and middleware ecosystem for x402 integration.
 
 ## Facilitator
 
@@ -137,21 +62,7 @@ The supported networks are determined by which RPC URLs you provide:
 
 #### 2. Build and Run with Docker
 
-Prebuilt Docker images are available at:
-- [GitHub Container Registry](https://ghcr.io/x402-rs/x402-facilitator): `ghcr.io/x402-rs/x402-facilitator`
-- [Docker Hub](https://hub.docker.com/r/ukstv/x402-facilitator): `ukstv/x402-facilitator`
-
-Run the container from Docker Hub:
-```shell
-docker run --env-file .env -p 8080:8080 ukstv/x402-facilitator
-```
-
-To run using GitHub Container Registry:
-```shell
-docker run --env-file .env -p 8080:8080 ghcr.io/x402-rs/x402-facilitator
-```
-
-Or build a Docker image locally:
+Build a Docker image locally:
 ```shell
 docker build -t x402-rs .
 docker run --env-file .env -p 8080:8080 x402-rs
@@ -205,21 +116,6 @@ serve({
   fetch: app.fetch,
   port: 3000
 });
-```
-
-</details>
-
-<details>
-<summary>If you use `x402-axum`</summary>
-
-```rust
-let x402 = X402Middleware::try_from("http://your-validator.url/").unwrap();  // 👈 Your self-hosted Facilitator
-let usdc = USDCDeployment::by_network(Network::BaseSepolia);
-
-let app = Router::new().route("/paid-content", get(handler).layer( 
-        x402.with_price_tag(usdc.amount("0.025").pay_to("0xYourAddress").unwrap())
-    ),
-);
 ```
 
 </details>
