@@ -1,3 +1,9 @@
+# x402-facilitator
+
+This project is forked from x402-rs.
+
+Our goal is to maintain a stable version and extend the functionality of the original x402 facilitator for production use, including support for additional blockchains and tokens, as well as enhanced observability features, while ensuring compatibility with the x402 protocol.
+
 # x402-rs
 
 [![Crates.io](https://img.shields.io/crates/v/x402-rs.svg)](https://crates.io/crates/x402-rs)
