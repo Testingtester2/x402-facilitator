@@ -1,7 +1,7 @@
 [package]
 name = "x402-facilitator"
 version = "0.11.0"
-authors = ["Sergey Ukustov <sergey@ukstv.me>"]
+authors = ["Sergey Ukustov <sergey@ukstv.me>", "hydai <hydai@secondstate.io>"]
 edition = "2024"
 license = "Apache-2.0"
 repository = "https://github.com/second-state/x402-facilitator"
