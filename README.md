@@ -1,45 +1,26 @@
 # x402-facilitator
 
-This project is forked from [x402-rs](https://github.com/x402-rs/x402-rs).
+> This project is forked from [x402-rs](https://github.com/x402-rs/x402-rs) in Oct 2025. The source code is released under the same Apache 2.0 license.
 
-Our goal is to maintain a stable version and extend the functionality of the original x402 facilitator for production use, including support for additional blockchains and tokens, as well as enhanced observability features, while ensuring compatibility with the x402 protocol.
+The **x402 facilitator project** aims to create universal x402 payment infrastructure for both humans and machines (AI agents). It will support the x402 payment protocol across
 
-===
+* all blockchains.
+* all fungible tokens and coins, including all ERC-20 compatible tokens.
+* traditional credit card payment networks.
+* traditional bank transfers.
 
-# x402-rs
+The initial focus is to support USDC and USDT stablecoins across blockchains.
 
-> A Rust-based implementation of the x402 protocol.
+## Current software release
 
-This repository provides:
+* Rust crate for [x402-facilitator](https://crates.io/crates/x402-facilitator)
+* [Documentation](https://docs.rs/x402-facilitator/0.11.0/x402_facilitator/)
+* Demo: [purchase a video](https://pay.x402labs.dev/demo)
+* Demo source code: [x402 payment link](https://github.com/second-state/x402-payment-link)
 
-- `x402-rs` (current crate):
-  - Core protocol types, facilitator traits, and logic for on-chain payment verification and settlement
-  - Facilitator binary - production-grade HTTP server to verify and settle x402 payments
+## Usage
 
-## About x402
-
-The [x402 protocol](https://docs.cdp.coinbase.com/x402/docs/overview) is a proposed standard for making blockchain payments directly through HTTP using native `402 Payment Required` status code.
-
-Servers declare payment requirements for specific routes. Clients send cryptographically signed payment payloads. Facilitators verify and settle payments on-chain.
-
-## Facilitator
-
-The `x402-rs` crate (this repo) provides a runnable x402 facilitator binary. The _Facilitator_ role simplifies adoption of x402 by handling:
-- **Payment verification**: Confirming that client-submitted payment payloads match the declared requirements.
-- **Payment settlement**: Submitting validated payments to the blockchain and monitoring their confirmation.
-
-By using a Facilitator, servers (sellers) do not need to:
-- Connect directly to a blockchain.
-- Implement complex cryptographic or blockchain-specific payment logic.
-
-Instead, they can rely on the Facilitator to perform verification and settlement, reducing operational overhead and accelerating x402 adoption.
-The Facilitator **never holds user funds**. It acts solely as a stateless verification and execution layer for signed payment payloads.
-
-For a detailed overview of the x402 payment flow and Facilitator role, see the [x402 protocol documentation](https://docs.cdp.coinbase.com/x402/docs/overview).
-
-### Usage
-
-#### 1. Provide environment variables
+### 1. Provide environment variables
 
 Create a `.env` file or set environment variables directly. Example `.env`:
 
@@ -60,67 +41,27 @@ The supported networks are determined by which RPC URLs you provide:
 - If you set both `RPC_URL_BASE_SEPOLIA` and `RPC_URL_BASE`, then both Base Sepolia and Base Mainnet are supported.
 - If an RPC URL for a network is missing, that network will not be available for settlement or verification.
 
-#### 2. Build and Run with Docker
+### 2. Build and Run with Docker
 
 Build a Docker image locally:
 ```shell
-docker build -t x402-rs .
-docker run --env-file .env -p 8080:8080 x402-rs
+docker build -t x402-facilitator .
+docker run --env-file .env -p 8080:8080 x402-facilitator
 ```
 
 The container:
 * Exposes port `8080` (or a port you configure with `PORT` environment variable).
-* Starts on http://localhost:8080 by default.
+* Starts on `http://localhost:8080` by default.
 * Requires minimal runtime dependencies (based on `debian:bullseye-slim`).
 
-#### 3. Point your application to your Facilitator
+### 3. Point your application to your Facilitator
 
-If you are building an x402-powered application, update the Facilitator URL to point to your self-hosted instance.
+If you are building an x402-powered application, update the Facilitator URL to point to your self-hosted instance. An example is the [x402 payment link](https://github.com/second-state/x402-payment-link) project.
 
 > ℹ️ **Tip:** For production deployments, ensure your Facilitator is reachable via HTTPS and protect it against public abuse.
 
-<details>
-<summary>If you use Hono and x402-hono</summary>
-From [x402.org Quickstart for Sellers](https://x402.gitbook.io/x402/getting-started/quickstart-for-sellers):
 
-```typescript
-import { Hono } from "hono";
-import { serve } from "@hono/node-server";
-import { paymentMiddleware } from "x402-hono";
-
-const app = new Hono();
-
-// Configure the payment middleware
-app.use(paymentMiddleware(
-  "0xYourAddress", // Your receiving wallet address
-  {
-    "/protected-route": {
-      price: "$0.10",
-      network: "base-sepolia",
-      config: {
-        description: "Access to premium content",
-      }
-    }
-  },
-  {
-    url: "http://your-validator.url/", // 👈 Your self-hosted Facilitator
-  }
-));
-
-// Implement your protected route
-app.get("/protected-route", (c) => {
-  return c.json({ message: "This content is behind a paywall" });
-});
-
-serve({
-  fetch: app.fetch,
-  port: 3000
-});
-```
-
-</details>
-
-### Configuration
+## Configuration
 
 The service reads configuration via `.env` file or directly through environment variables.
 
@@ -144,7 +85,7 @@ Available variables:
 * `RPC_URL_SEI_TESTNET`: RPC endpoint for Sei testnet.
 
 
-### Observability
+## Observability
 
 The facilitator emits [OpenTelemetry](https://opentelemetry.io)-compatible traces and metrics to standard endpoints,
 making it easy to integrate with tools like Honeycomb, Prometheus, Grafana, and others.
@@ -164,30 +105,7 @@ OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
 
 The service automatically detects and initializes exporters if `OTEL_EXPORTER_OTLP_*` variables are provided.
 
-### Supported Networks
-
-The Facilitator supports different networks based on the environment variables you configure:
-
-| Network                   | Environment Variable     | Supported if Set | Notes                            |
-|:--------------------------|:-------------------------|:-----------------|:---------------------------------|
-| Base Sepolia Testnet      | `RPC_URL_BASE_SEPOLIA`   | ✅                | Testnet, Recommended for testing |
-| Base Mainnet              | `RPC_URL_BASE`           | ✅                | Mainnet                          |
-| XDC Mainnet               | `RPC_URL_XDC`            | ✅                | Mainnet                          |
-| Avalanche Fuji Testnet    | `RPC_URL_AVALANCHE_FUJI` | ✅                | Testnet                          |
-| Avalanche C-Chain Mainnet | `RPC_URL_AVALANCHE`      | ✅                | Mainnet                          |
-| Polygon Amoy Testnet      | `RPC_URL_POLYGON_AMOY`   | ✅                | Testnet                          |
-| Polygon Mainnet           | `RPC_URL_POLYGON`        | ✅                | Mainnet                          |
-| Sei Testnet               | `RPC_URL_SEI_TESTNET`    | ✅                | Testnet                          |
-| Sei Mainnet               | `RPC_URL_SEI`            | ✅                | Mainnet                          |
-| Solana Mainnet            | `RPC_URL_SOLANA`         | ✅                | Mainnet                          |
-| Solana Devnet             | `RPC_URL_SOLANA_DEVNET`  | ✅                | Testnet, Recommended for testing |
-
-- If you provide say only `RPC_URL_BASE_SEPOLIA`, only **Base Sepolia** will be available.
-- If you provide `RPC_URL_BASE_SEPOLIA`, `RPC_URL_BASE`, and other env variables on the list, then all the specified networks will be supported.
-
-> ℹ️ **Tip:** For initial development and testing, you can start with Base Sepolia only.
-
-### Development
+## Development
 
 Prerequisites:
 - Rust 1.80+
@@ -208,8 +126,6 @@ cargo run
 * [x402 Overview by Coinbase](https://docs.cdp.coinbase.com/x402/docs/overview)
 * [Facilitator Documentation by Coinbase](https://docs.cdp.coinbase.com/x402/docs/facilitator)
 
-## Contributions and feedback welcome!
-Feel free to open issues or pull requests to improve x402 support in the Rust ecosystem.
 
 ## License
 
