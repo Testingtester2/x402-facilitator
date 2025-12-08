@@ -23,6 +23,7 @@ The **x402-facilitator** works with all x402-compatible clients, SDKs, and middl
 
 * RECOMMENDED: [x402 payment link](https://github.com/second-state/x402-payment-link) similiar to Stripe payment links
 * The Coinbase SDKs for [Python](https://github.com/coinbase/x402/tree/main/examples/python) and [Typescript](https://github.com/coinbase/x402/tree/main/examples/typescript)
+* Starter project templates: [x402-starter-kit](https://github.com/dabit3/x402-starter-kit) | [create-x402](https://github.com/dabit3/create-x402)
 
 ## Usage
 
