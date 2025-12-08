@@ -15,8 +15,14 @@ The initial focus is to support USDC and USDT stablecoins across blockchains.
 
 * Rust crate for [x402-facilitator](https://crates.io/crates/x402-facilitator)
 * [Documentation](https://docs.rs/x402-facilitator/0.11.0/x402_facilitator/)
-* Demo: [purchase a video](https://pay.x402labs.dev/demo)
-* Demo source code: [x402 payment link](https://github.com/second-state/x402-payment-link)
+* Demo: [payment link](https://pay.x402labs.dev/demo) | [screencast](https://youtube.com/shorts/5l6WhjIHk1A)
+
+## Supported clients
+
+The **x402-facilitator** works with all x402-compatible clients, SDKs, and middleware. Just configure them to use your own facilitator server (see below).
+
+* RECOMMENDED: [x402 payment link](https://github.com/second-state/x402-payment-link) similiar to Stripe payment links
+* The Coinbase SDKs for [Python](https://github.com/coinbase/x402/tree/main/examples/python) and [Typescript](https://github.com/coinbase/x402/tree/main/examples/typescript)
 
 ## Usage
 
