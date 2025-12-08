@@ -26,6 +26,7 @@ use std::ops::{Add, Div, Mul, Rem, Sub};
 use std::str::FromStr;
 use url::Url;
 
+use crate::chain::FacilitatorLocalError;
 use crate::network::Network;
 use crate::timestamp::UnixTimestamp;
 
@@ -1060,6 +1061,66 @@ impl<'de> Deserialize<'de> for VerifyResponse {
                 "`invalidReason` must be present when `isValid` is false",
             )),
         }
+    }
+}
+
+impl From<FacilitatorLocalError> for VerifyResponse {
+    fn from(err: FacilitatorLocalError) -> Self {
+        let (payer, reason) = match &err {
+            FacilitatorLocalError::UnsupportedNetwork(payer) => {
+                (payer.clone(), FacilitatorErrorReason::InvalidNetwork)
+            }
+            FacilitatorLocalError::NetworkMismatch(payer, _, _) => {
+                (payer.clone(), FacilitatorErrorReason::InvalidNetwork)
+            }
+            FacilitatorLocalError::SchemeMismatch(payer, _, _) => {
+                (payer.clone(), FacilitatorErrorReason::InvalidScheme)
+            }
+            FacilitatorLocalError::InsufficientFunds(payer) => (
+                Some(payer.clone()),
+                FacilitatorErrorReason::InsufficientFunds,
+            ),
+            FacilitatorLocalError::InsufficientValue(payer) => (
+                Some(payer.clone()),
+                FacilitatorErrorReason::InsufficientFunds,
+            ),
+            FacilitatorLocalError::InvalidSignature(payer, msg) => (
+                Some(payer.clone()),
+                FacilitatorErrorReason::FreeForm(format!("invalid_signature: {msg}")),
+            ),
+            FacilitatorLocalError::InvalidTiming(payer, msg) => (
+                Some(payer.clone()),
+                FacilitatorErrorReason::FreeForm(format!("invalid_timing: {msg}")),
+            ),
+            FacilitatorLocalError::ReceiverMismatch(payer, _, _) => (
+                Some(payer.clone()),
+                FacilitatorErrorReason::FreeForm(format!("receiver_mismatch: {err}")),
+            ),
+            FacilitatorLocalError::ContractCall(msg) => (
+                Some(MixedAddress::Offchain("".to_string())),
+                // if over rate limit in msg, replace it to "RPC endpoint is over rate limit. Please retry again later."
+                if msg.contains("rate limit") {
+                    FacilitatorErrorReason::FreeForm(
+                        "RPC endpoint is over rate limit. Please retry again later.".to_string(),
+                    )
+                } else {
+                    FacilitatorErrorReason::FreeForm(format!("contract_call_failed: {msg}"))
+                },
+            ),
+            FacilitatorLocalError::InvalidAddress(msg) => (
+                Some(MixedAddress::Offchain("".to_string())),
+                FacilitatorErrorReason::FreeForm(format!("invalid_address: {msg}")),
+            ),
+            FacilitatorLocalError::ClockError(_) => (
+                Some(MixedAddress::Offchain("".to_string())),
+                FacilitatorErrorReason::UnexpectedSettleError,
+            ),
+            FacilitatorLocalError::DecodingError(msg) => (
+                Some(MixedAddress::Offchain("".to_string())),
+                FacilitatorErrorReason::FreeForm(format!("decoding_error: {msg}")),
+            ),
+        };
+        VerifyResponse::invalid(payer, reason)
     }
 }
 

@@ -68,8 +68,15 @@ where
             .provider_map
             .by_network(network)
             .ok_or(FacilitatorLocalError::UnsupportedNetwork(None))?;
-        let verify_response = provider.verify(request).await?;
-        Ok(verify_response)
+
+        match provider.verify(request).await {
+            Ok(verify_response) => Ok(verify_response),
+            Err(e) => {
+                let err: FacilitatorLocalError = e.into();
+                tracing::warn!(error = ?err, "Verification failed, returning Invalid response");
+                Ok(err.into())
+            }
+        }
     }
 
     /// Executes an x402 payment on-chain using ERC-3009 `transferWithAuthorization`.
