@@ -1,127 +1,232 @@
-x402-facilitator
-This project is forked from x402-rs in Oct 2025. The source code is released under the same Apache 2.0 license.
+# x402-facilitator
 
-The x402 facilitator project aims to create universal x402 payment infrastructure for both humans and machines (AI agents). It will support the x402 payment protocol across
+Universal [x402 payment protocol](https://www.x402.org/) facilitator for humans and AI agents. Verify and settle crypto payments across multiple blockchains through a single HTTP server.
 
-all blockchains.
-all fungible tokens and coins, including all ERC-20 compatible tokens.
-traditional credit card payment networks.
-traditional bank transfers.
-The initial focus is to support USDC and USDT stablecoins across blockchains.
+> Forked from [x402-rs](https://github.com/anthropics/x402-rs) (Oct 2025). Released under Apache 2.0.
 
-Shibarium support
-This fork adds Shibarium (chain ID 109, eip155:109) and Puppynet testnet (chain ID 157, eip155:157) as supported networks.
+## What is x402?
 
-Shibarium's stablecoins are bridged ERC-20 tokens that do not implement EIP-3009 (transferWithAuthorization). Instead, settlement uses Uniswap's Permit2 contract — already deployed on Shibarium at the canonical address 0x000000000022D473030F116dDEE9F6B43aC78BA3 — which provides signature-based token transfers via permitTransferFrom with a witness pattern. This preserves x402's trust-minimization guarantee by locking funds to the intended recipient in the signed message.
+The x402 protocol enables machine-to-machine and human-to-machine payments using HTTP status code 402. A **facilitator** is the settlement layer — it verifies payment signatures off-chain and executes on-chain transfers when requested.
 
-Shibarium token addresses:
+## Supported Networks
 
-Token	Address
-USDC	0xf010f12dcA0b96D2d6685bf4dB3dbB4Ad500B6Ad
-USDT	0xaB082b8ad96c7f47ED70ED971Ce2116469954cFB
-DAI	0x0726959d22361B79e4D50A5D157b044A83eC870d
-To enable Shibarium, uncomment the RPC URL in your .env file:
+| Network | Chain ID | Type | Settlement Method |
+|---------|----------|------|-------------------|
+| Base | 8453 | Mainnet | ERC-3009 / EIP-2612 |
+| Base Sepolia | 84532 | Testnet | ERC-3009 / EIP-2612 |
+| Polygon | 137 | Mainnet | ERC-3009 / EIP-2612 |
+| Polygon Amoy | 80002 | Testnet | ERC-3009 / EIP-2612 |
+| Avalanche C-Chain | 43114 | Mainnet | ERC-3009 / EIP-2612 |
+| Avalanche Fuji | 43113 | Testnet | ERC-3009 / EIP-2612 |
+| Sei | 1329 | Mainnet | ERC-3009 / EIP-2612 |
+| Sei Testnet | 1328 | Testnet | ERC-3009 / EIP-2612 |
+| Shibarium | 109 | Mainnet | Permit2 |
+| Shibarium Puppynet | 157 | Testnet | Permit2 |
+| XDC | 50 | Mainnet | ERC-3009 / EIP-2612 |
+| XRPL EVM | 1440000 | Mainnet | ERC-3009 / EIP-2612 |
+| Solana | — | Mainnet | SPL Token Transfer |
+| Solana Devnet | — | Devnet | SPL Token Transfer |
 
-# Shibarium mainnet (currently commented out — uncomment to enable)
-RPC_URL_SHIBARIUM=https://www.shibrpc.com
+Networks are **dynamically enabled** based on which `RPC_URL_*` environment variables you provide.
 
-# Shibarium Puppynet testnet
-RPC_URL_SHIBARIUM_PUPPYNET=https://puppynet.shibrpc.com
-Note: The Shibarium livenet RPC URL is commented out by default in .env.example. Uncomment RPC_URL_SHIBARIUM when you are ready to accept payments on Shibarium mainnet.
+## Supported Tokens
 
-Current software release
-Rust crate for x402-facilitator
-Documentation
-Demo: payment link | screencast
-Supported clients
-The x402-facilitator works with all x402-compatible clients, SDKs, and middleware. Just configure them to use your own facilitator server (see below).
+**USDC** is the primary supported stablecoin, with verified contract addresses on every network above.
 
-RECOMMENDED: x402 payment link similiar to Stripe payment links
-The Coinbase SDKs for Python and Typescript
-Starter project templates: x402-starter-kit | create-x402
-Usage
-1. Provide environment variables
-Create a .env file or set environment variables directly. Example .env:
+Shibarium additionally supports:
 
+| Token | Address |
+|-------|---------|
+| USDC | `0xf010f12dcA0b96D2d6685bf4dB3dbB4Ad500B6Ad` |
+| USDT | `0xaB082b8ad96c7f47ED70ED971Ce2116469954cFB` |
+| DAI | `0x0726959d22361B79e4D50A5D157b044A83eC870d` |
+
+## Settlement Methods
+
+The facilitator uses the best available method for each network:
+
+- **ERC-3009** (`transferWithAuthorization`) — single-transaction gasless transfers. Used on Base, Polygon, Avalanche, Sei, XDC, XRPL EVM. Supports EOA, EIP-1271 (smart contract wallets), and EIP-6492 (counterfactual wallets).
+- **EIP-2612** (`permit` + `transferFrom`) — two-step fallback for tokens without ERC-3009.
+- **Permit2** (`permitTransferFrom` with witness) — used on Shibarium, where bridged ERC-20 tokens lack EIP-3009. Uses Uniswap's canonical Permit2 contract (`0x000000000022D473030F116dDEE9F6B43aC78BA3`).
+- **Native token** — verifies already-submitted on-chain transactions for native coin transfers (ETH, BONE, AVAX, etc.).
+- **SPL Token Transfer** — Solana-native token transfer with compute budget management.
+
+## Quick Start
+
+### 1. Configure environment
+
+Copy `.env.example` and fill in your values:
+
+```bash
+cp .env.example .env
+```
+
+```env
 HOST=0.0.0.0
 PORT=8080
+
+# Enable the networks you want (add/remove as needed)
 RPC_URL_BASE_SEPOLIA=https://sepolia.base.org
 RPC_URL_BASE=https://mainnet.base.org
+# RPC_URL_POLYGON=https://polygon-rpc.com
+# RPC_URL_SHIBARIUM=https://www.shibrpc.com
+# RPC_URL_SHIBARIUM_PUPPYNET=https://puppynet.shibrpc.com
+
+# Signer
 SIGNER_TYPE=private-key
-EVM_PRIVATE_KEY=0xdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef
-SOLANA_PRIVATE_KEY=6ASf5EcmmEHTgDJ4X4ZT5vT6iHVJBXPg5AN5YoTCpGWt
+EVM_PRIVATE_KEY=0x<your-private-key>
+# SOLANA_PRIVATE_KEY=<base58-encoded-keypair>
+
 RUST_LOG=info
-Important: The supported networks are determined by which RPC URLs you provide:
+```
 
-If you set only RPC_URL_BASE_SEPOLIA, then only Base Sepolia network is supported.
-If you set both RPC_URL_BASE_SEPOLIA and RPC_URL_BASE, then both Base Sepolia and Base Mainnet are supported.
-If an RPC URL for a network is missing, that network will not be available for settlement or verification.
-2. Build and Run with Docker
-Build a Docker image locally:
+> **Note:** Only networks with configured RPC URLs will be available. Shibarium mainnet is commented out by default — uncomment `RPC_URL_SHIBARIUM` when ready.
 
+### 2. Run with Docker
+
+```bash
 docker build -t x402-facilitator .
 docker run --env-file .env -p 8080:8080 x402-facilitator
-The container:
+```
 
-Exposes port 8080 (or a port you configure with PORT environment variable).
-Starts on http://localhost:8080 by default.
-Requires minimal runtime dependencies (based on debian:bullseye-slim).
-3. Point your application to your Facilitator
-If you are building an x402-powered application, update the Facilitator URL to point to your self-hosted instance. An example is the x402 payment link project.
+### 3. Run from source
 
-ℹ️ Tip: For production deployments, ensure your Facilitator is reachable via HTTPS and protect it against public abuse.
+```bash
+cargo build --release
+cargo run --release
+```
 
-Configuration
-The service reads configuration via .env file or directly through environment variables.
+The server starts at `http://localhost:8080`.
 
-Available variables:
+### 4. Point your app to the facilitator
 
-RUST_LOG: Logging level (e.g., info, debug, trace),
-HOST: HTTP host to bind to (default: 0.0.0.0),
-PORT: HTTP server port (default: 8080),
-SIGNER_TYPE (required): Type of signer to use. Only private-key is supported now,
-EVM_PRIVATE_KEY (required): Private key in hex for EVM networks, like 0xdeadbeef...,
-SOLANA_PRIVATE_KEY (required): Private key in hex for Solana networks, like 0xdeadbeef...,
-RPC_URL_BASE_SEPOLIA: Ethereum RPC endpoint for Base Sepolia testnet,
-RPC_URL_BASE: Ethereum RPC endpoint for Base mainnet,
-RPC_URL_AVALANCHE_FUJI: Ethereum RPC endpoint for Avalanche Fuji testnet,
-RPC_URL_AVALANCHE: Ethereum RPC endpoint for Avalanche C-Chain mainnet.
-RPC_URL_SOLANA: RPC endpoint for Solana mainnet.
-RPC_URL_SOLANA_DEVNET: RPC endpoint for Solana devnet.
-RPC_URL_POLYGON: RPC endpoint for Polygon mainnet.
-RPC_URL_POLYGON_AMOY: RPC endpoint for Polygon Amoy testnet.
-RPC_URL_SEI: RPC endpoint for Sei mainnet.
-RPC_URL_SEI_TESTNET: RPC endpoint for Sei testnet.
-RPC_URL_SHIBARIUM: RPC endpoint for Shibarium mainnet (uses Permit2 for settlement).
-RPC_URL_SHIBARIUM_PUPPYNET: RPC endpoint for Shibarium Puppynet testnet.
-Observability
-The facilitator emits OpenTelemetry-compatible traces and metrics to standard endpoints, making it easy to integrate with tools like Honeycomb, Prometheus, Grafana, and others. Tracing spans are annotated with HTTP method, status code, URI, latency, other request and process metadata.
+Configure any x402-compatible client or SDK to use your facilitator URL. See [compatible clients](#compatible-clients) below.
 
-To enable tracing and metrics export, set the appropriate OTEL_ environment variables:
+## API Endpoints
 
-# For Honeycomb, for example:
-# Endpoint URL for sending OpenTelemetry traces and metrics
+| Method | Path | Description |
+|--------|------|-------------|
+| `POST` | `/verify` | Verify a payment signature off-chain (no state changes) |
+| `POST` | `/settle` | Execute on-chain settlement |
+| `GET` | `/supported` | List supported payment schemes and networks |
+| `GET` | `/health` | Health check (same as `/supported`) |
+
+### Verify
+
+Validates a payment payload by simulating the on-chain call via `eth_call` (EVM) or transaction simulation (Solana). Returns whether the signature and amounts are valid without executing any transfers.
+
+### Settle
+
+Submits the actual on-chain transaction. For ERC-3009, this is a single `transferWithAuthorization` call. For Permit2, it's a `permitTransferFrom`. For EIP-2612, it's a `permit` followed by `transferFrom`.
+
+## Compatible Clients
+
+Works with all x402-compatible clients and SDKs:
+
+- [x402 Payment Link](https://www.x402.org/) — Stripe-like payment links (recommended)
+- [Coinbase Python SDK](https://github.com/coinbase/x402-python)
+- [Coinbase TypeScript SDK](https://github.com/coinbase/x402-typescript)
+- Starter templates: [x402-starter-kit](https://github.com/coinbase/x402-starter-kit) | [create-x402](https://github.com/coinbase/create-x402)
+
+## Configuration Reference
+
+### Required
+
+| Variable | Description |
+|----------|-------------|
+| `SIGNER_TYPE` | Signer type (`private-key`) |
+| `EVM_PRIVATE_KEY` | Hex-encoded private key for EVM chains (supports comma-separated for multiple keys) |
+| `SOLANA_PRIVATE_KEY` | Base58-encoded keypair for Solana (required only if using Solana) |
+
+### Network RPC URLs
+
+| Variable | Network |
+|----------|---------|
+| `RPC_URL_BASE_SEPOLIA` | Base Sepolia testnet |
+| `RPC_URL_BASE` | Base mainnet |
+| `RPC_URL_POLYGON` | Polygon mainnet |
+| `RPC_URL_POLYGON_AMOY` | Polygon Amoy testnet |
+| `RPC_URL_AVALANCHE` | Avalanche C-Chain mainnet |
+| `RPC_URL_AVALANCHE_FUJI` | Avalanche Fuji testnet |
+| `RPC_URL_SEI` | Sei mainnet |
+| `RPC_URL_SEI_TESTNET` | Sei testnet |
+| `RPC_URL_SHIBARIUM` | Shibarium mainnet |
+| `RPC_URL_SHIBARIUM_PUPPYNET` | Shibarium Puppynet testnet |
+| `RPC_URL_SOLANA` | Solana mainnet |
+| `RPC_URL_SOLANA_DEVNET` | Solana devnet |
+
+### Optional
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `HOST` | HTTP bind address | `0.0.0.0` |
+| `PORT` | HTTP port | `8080` |
+| `RUST_LOG` | Log level (`info`, `debug`, `trace`) | — |
+
+### Solana Compute Budget (Optional)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `X402_SOLANA_MAX_COMPUTE_UNIT_LIMIT_SOLANA` | Max compute units (mainnet) | `400000` |
+| `X402_SOLANA_MAX_COMPUTE_UNIT_LIMIT_SOLANA_DEVNET` | Max compute units (devnet) | `200000` |
+| `X402_SOLANA_MAX_COMPUTE_UNIT_PRICE_SOLANA` | Max price in microlamports (mainnet) | `1000000` |
+| `X402_SOLANA_MAX_COMPUTE_UNIT_PRICE_SOLANA_DEVNET` | Max price in microlamports (devnet) | `100000` |
+
+## Observability
+
+The facilitator supports OpenTelemetry-compatible traces and metrics. To enable, set:
+
+```env
 OTEL_EXPORTER_OTLP_ENDPOINT=https://api.honeycomb.io:443
-# Comma-separated list of key=value pairs to add as headers
-OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=your_api_key,x-honeycomb-dataset=x402-rs
-# Export protocol to use for telemetry. Supported values: `http/protobuf` (default), `grpc`
+OTEL_EXPORTER_OTLP_HEADERS=x-honeycomb-team=your_api_key,x-honeycomb-dataset=x402
 OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf
-The service automatically detects and initializes exporters if OTEL_EXPORTER_OTLP_* variables are provided.
+```
 
-Development
-Prerequisites:
+Works with Honeycomb, Prometheus, Grafana, Jaeger, and other OTLP-compatible backends.
 
-Rust 1.80+
-cargo and a working toolchain
-Build locally:
+## Development
 
+**Prerequisites:** Rust 1.80+
+
+```bash
+# Build
 cargo build
-Run:
 
+# Run
 cargo run
-Related Resources
-x402 Protocol Documentation
-x402 Overview by Coinbase
-Facilitator Documentation by Coinbase
-License
+
+# Run with debug logging
+RUST_LOG=debug cargo run
+```
+
+## Architecture
+
+```
+Client → POST /verify or /settle
+              ↓
+         HTTP Handler (Axum)
+              ↓
+         Facilitator trait
+              ↓
+    ┌─────────┴──────────┐
+    EvmProvider      SolanaProvider
+    ├─ ERC-3009      ├─ SPL Token
+    ├─ EIP-2612      └─ Compute Budget
+    ├─ Permit2
+    └─ Native Token
+```
+
+- **Verify** simulates the transfer off-chain (`eth_call` / tx simulation) — no gas spent
+- **Settle** submits the real transaction on-chain
+- Providers are lazily initialized based on configured RPC URLs
+- Multiple EVM private keys supported with round-robin selection
+
+## Related Resources
+
+- [x402 Protocol Documentation](https://www.x402.org/)
+- [x402 Overview by Coinbase](https://docs.cdp.coinbase.com/x402/docs/welcome)
+- [Facilitator Documentation](https://docs.cdp.coinbase.com/x402/docs/facilitator)
+
+## License
+
 Apache-2.0
