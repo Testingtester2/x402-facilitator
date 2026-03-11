@@ -50,9 +50,9 @@ use crate::timestamp::UnixTimestamp;
 use crate::types::{
     Eip2612Payload, Erc3009Payload, EvmAddress, EvmSignature, ExactEvmPayload, ExactPaymentPayload,
     FacilitatorErrorReason, HexEncodedNonce, MixedAddress, NativePaymentPayload, PaymentPayload,
-    PaymentRequirements, Scheme, SettleRequest, SettleResponse, SupportedPaymentKind,
-    SupportedPaymentKindsResponse, TokenAmount, TransactionHash, TransferWithAuthorization,
-    VerifyRequest, VerifyResponse, X402Version,
+    PaymentRequirements, Permit2Payload, Scheme, SettleRequest, SettleResponse,
+    SupportedPaymentKind, SupportedPaymentKindsResponse, TokenAmount, TransactionHash,
+    TransferWithAuthorization, VerifyRequest, VerifyResponse, X402Version,
 };
 
 sol!(
@@ -83,10 +83,53 @@ sol! {
     "abi/Validator6492.json"
 }
 
+sol! {
+    /// Uniswap Permit2 contract interface for signature-based token transfers.
+    #[allow(missing_docs)]
+    #[allow(clippy::too_many_arguments)]
+    #[derive(Debug)]
+    #[sol(rpc)]
+    contract Permit2Contract {
+        struct TokenPermissions {
+            address token;
+            uint256 amount;
+        }
+
+        struct PermitTransferFrom {
+            TokenPermissions permitted;
+            uint256 nonce;
+            uint256 deadline;
+        }
+
+        struct SignatureTransferDetails {
+            address to;
+            uint256 requestedAmount;
+        }
+
+        function permitTransferFrom(
+            PermitTransferFrom calldata permit,
+            SignatureTransferDetails calldata transferDetails,
+            address owner,
+            bytes32 witness,
+            string calldata witnessTypeString,
+            bytes calldata signature
+        ) external;
+    }
+}
+
 /// Signature verifier for EIP-6492, EIP-1271, EOA, universally deployed on the supported EVM chains
 /// If absent on a target chain, verification will fail; you should deploy the validator there.
 const VALIDATOR_ADDRESS: alloy::primitives::Address =
     address!("0xdAcD51A54883eb67D95FAEb2BBfdC4a9a6BD2a3B");
+
+/// Canonical Uniswap Permit2 contract address, deployed at the same address on all chains.
+const PERMIT2_ADDRESS: alloy::primitives::Address =
+    address!("0x000000000022D473030F116dDEE9F6B43aC78BA3");
+
+/// Returns `true` if the given network uses Permit2 for settlement instead of EIP-3009.
+fn is_permit2_network(network: Network) -> bool {
+    matches!(network, Network::Shibarium | Network::ShibariumPuppynet)
+}
 
 /// Combined filler type for gas, blob gas, nonce, and chain ID.
 type InnerFiller = JoinFill<
@@ -147,6 +190,8 @@ impl TryFrom<Network> for EvmChain {
             Network::Polygon => Ok(EvmChain::new(value, 137)),
             Network::Sei => Ok(EvmChain::new(value, 1329)),
             Network::SeiTestnet => Ok(EvmChain::new(value, 1328)),
+            Network::Shibarium => Ok(EvmChain::new(value, 109)),
+            Network::ShibariumPuppynet => Ok(EvmChain::new(value, 157)),
         }
     }
 }
@@ -444,6 +489,8 @@ impl FromEnvByNetworkBuild for EvmProvider {
             Network::Polygon => true,
             Network::Sei => true,
             Network::SeiTestnet => true,
+            Network::Shibarium => false,
+            Network::ShibariumPuppynet => false,
         };
         let provider = EvmProvider::try_new(wallet, &rpc_url, is_eip1559, network).await?;
         Ok(Some(provider))
@@ -550,6 +597,138 @@ where
         .await?;
 
     Ok((owner.into(), transfer_receipt))
+}
+
+/// Verifies a Permit2 payment by simulating the permitTransferFrom call on-chain.
+#[instrument(skip_all, err)]
+async fn verify_permit2_payment<P: Provider>(
+    provider: &P,
+    payload: &Permit2Payload,
+    requirements: &PaymentRequirements,
+) -> Result<MixedAddress, FacilitatorLocalError> {
+    let owner: Address = payload.owner.into();
+    let to: Address = payload.to.into();
+
+    let expected_to: Address = requirements
+        .pay_to
+        .clone()
+        .try_into()
+        .map_err(|e| FacilitatorLocalError::InvalidAddress(format!("{e:?}")))?;
+    if to != expected_to {
+        return Err(FacilitatorLocalError::ReceiverMismatch(
+            owner.into(),
+            to.to_string(),
+            expected_to.to_string(),
+        ));
+    }
+
+    let amount_required: U256 = requirements.max_amount_required.into();
+    let amount: U256 = payload.amount.into();
+    if amount < amount_required {
+        return Err(FacilitatorLocalError::InsufficientValue(owner.into()));
+    }
+
+    assert_time(
+        owner.into(),
+        UnixTimestamp(0),
+        payload.deadline,
+    )?;
+
+    // Check token balance
+    let token_address: Address = payload.token.into();
+    let token = USDC::new(token_address, provider);
+    assert_enough_balance(&token, &payload.owner, amount_required).await?;
+
+    // Simulate the permitTransferFrom call
+    let permit2 = Permit2Contract::new(PERMIT2_ADDRESS, provider);
+    let permit_struct = Permit2Contract::PermitTransferFrom {
+        permitted: Permit2Contract::TokenPermissions {
+            token: token_address,
+            amount,
+        },
+        nonce: payload.nonce.into(),
+        deadline: U256::from(payload.deadline.0),
+    };
+    let transfer_details = Permit2Contract::SignatureTransferDetails {
+        to,
+        requestedAmount: amount,
+    };
+
+    permit2
+        .permitTransferFrom(
+            permit_struct,
+            transfer_details,
+            owner,
+            FixedBytes(payload.witness.0),
+            payload.witness_type_string.clone(),
+            payload.signature.clone().into(),
+        )
+        .call()
+        .await
+        .map_err(|e| {
+            FacilitatorLocalError::InvalidSignature(
+                owner.into(),
+                format!("Permit2 verification failed: {e:?}"),
+            )
+        })?;
+
+    Ok(owner.into())
+}
+
+/// Settles a Permit2 payment by executing permitTransferFrom on-chain.
+#[instrument(skip_all, err)]
+async fn settle_permit2_payment<P: MetaEvmProvider>(
+    provider: &P,
+    payload: &Permit2Payload,
+) -> Result<(MixedAddress, TransactionReceipt), FacilitatorLocalError>
+where
+    FacilitatorLocalError: From<P::Error>,
+{
+    let owner: Address = payload.owner.into();
+    let to: Address = payload.to.into();
+    let token_address: Address = payload.token.into();
+    let amount: U256 = payload.amount.into();
+
+    let permit2 = Permit2Contract::new(PERMIT2_ADDRESS, provider.inner());
+    let permit_struct = Permit2Contract::PermitTransferFrom {
+        permitted: Permit2Contract::TokenPermissions {
+            token: token_address,
+            amount,
+        },
+        nonce: payload.nonce.into(),
+        deadline: U256::from(payload.deadline.0),
+    };
+    let transfer_details = Permit2Contract::SignatureTransferDetails {
+        to,
+        requestedAmount: amount,
+    };
+
+    let call = permit2.permitTransferFrom(
+        permit_struct,
+        transfer_details,
+        owner,
+        FixedBytes(payload.witness.0),
+        payload.witness_type_string.clone(),
+        payload.signature.clone().into(),
+    );
+
+    let receipt = provider
+        .send_transaction(MetaTransaction {
+            to: PERMIT2_ADDRESS,
+            calldata: call.calldata().clone(),
+            confirmations: 1,
+        })
+        .instrument(tracing::info_span!(
+            "settle_permit2_transferFrom",
+            owner = %owner,
+            to = %to,
+            amount = %amount,
+            token = %token_address,
+            otel.kind = "client",
+        ))
+        .await?;
+
+    Ok((owner.into(), receipt))
 }
 
 /// Verifies a native token payment by checking the on-chain transaction.
@@ -695,6 +874,18 @@ where
             return Ok(VerifyResponse::valid(payer));
         }
 
+        // Permit2: early return for Shibarium and other Permit2-based networks
+        if is_permit2_network(payload.network) {
+            let permit2_payload = match &payload.payload {
+                ExactPaymentPayload::Evm(ExactEvmPayload::Permit2(p)) => p,
+                _ => return Err(FacilitatorLocalError::DecodingError(
+                    "Expected Permit2 payload for Permit2 network".to_string(),
+                )),
+            };
+            let payer = verify_permit2_payment(self.inner(), permit2_payload, requirements).await?;
+            return Ok(VerifyResponse::valid(payer));
+        }
+
         let (token_contract, payment, eip712_domain) =
             assert_valid_payment(self.inner(), self.chain(), payload, requirements).await?;
 
@@ -835,6 +1026,50 @@ where
                 transaction: Some(native_payload.tx_hash.clone()),
                 network: payload.network,
             });
+        }
+
+        // Permit2: early return for Shibarium and other Permit2-based networks
+        if is_permit2_network(payload.network) {
+            let permit2_payload = match &payload.payload {
+                ExactPaymentPayload::Evm(ExactEvmPayload::Permit2(p)) => p,
+                _ => return Err(FacilitatorLocalError::DecodingError(
+                    "Expected Permit2 payload for Permit2 network".to_string(),
+                )),
+            };
+
+            // Run the same validation as verify before settling
+            verify_permit2_payment(self.inner(), permit2_payload, requirements).await?;
+
+            let (payer, receipt) = settle_permit2_payment(self, permit2_payload).await?;
+            let success = receipt.status();
+            if success {
+                tracing::event!(Level::INFO,
+                    status = "ok",
+                    tx = %receipt.transaction_hash,
+                    "Permit2 settlement succeeded"
+                );
+                return Ok(SettleResponse {
+                    success: true,
+                    error_reason: None,
+                    payer,
+                    transaction: Some(TransactionHash::Evm(receipt.transaction_hash.0)),
+                    network: payload.network,
+                });
+            } else {
+                tracing::event!(
+                    Level::WARN,
+                    status = "failed",
+                    tx = %receipt.transaction_hash,
+                    "Permit2 settlement failed"
+                );
+                return Ok(SettleResponse {
+                    success: false,
+                    error_reason: Some(FacilitatorErrorReason::InvalidScheme),
+                    payer,
+                    transaction: Some(TransactionHash::Evm(receipt.transaction_hash.0)),
+                    network: payload.network,
+                });
+            }
         }
 
         let (token_contract, payment, eip712_domain) =
@@ -1289,6 +1524,7 @@ async fn assert_valid_payment<P: Provider>(
     let payer = match payment_payload {
         ExactEvmPayload::Erc3009(Erc3009Payload { authorization, .. }) => authorization.from,
         ExactEvmPayload::Eip2612(Eip2612Payload { permit, .. }) => permit.owner,
+        ExactEvmPayload::Permit2(p) => p.owner,
     };
     if payload.network != chain.network {
         return Err(FacilitatorLocalError::NetworkMismatch(
@@ -1320,6 +1556,7 @@ async fn assert_valid_payment<P: Provider>(
         ExactEvmPayload::Eip2612(Eip2612Payload { permit, transfer }) => {
             (transfer.to, UnixTimestamp(0), permit.deadline)
         }
+        ExactEvmPayload::Permit2(p) => (p.to, UnixTimestamp(0), p.deadline),
     };
 
     let requirements_to: EvmAddress = requirements
@@ -1399,6 +1636,11 @@ async fn assert_valid_payment<P: Provider>(
                 signature: signature.clone(),
             };
             Ok((TokenContract::Usdc(contract), payment, Some(domain)))
+        }
+        ExactEvmPayload::Permit2(_) => {
+            // Permit2 payloads are handled by dedicated verify/settle functions
+            // and should not reach this path.
+            Err(FacilitatorLocalError::UnsupportedNetwork(Some(payer.into())))
         }
     }
 }
