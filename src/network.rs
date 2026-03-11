@@ -54,6 +54,12 @@ pub enum Network {
     /// Sei testnet (chain ID 1328).
     #[serde(rename = "sei-testnet")]
     SeiTestnet,
+    /// Shibarium mainnet (chain ID 109).
+    #[serde(rename = "shibarium")]
+    Shibarium,
+    /// Shibarium Puppynet testnet (chain ID 157).
+    #[serde(rename = "shibarium-puppynet")]
+    ShibariumPuppynet,
 }
 
 impl Display for Network {
@@ -71,6 +77,8 @@ impl Display for Network {
             Network::Polygon => write!(f, "polygon"),
             Network::Sei => write!(f, "sei"),
             Network::SeiTestnet => write!(f, "sei-testnet"),
+            Network::Shibarium => write!(f, "shibarium"),
+            Network::ShibariumPuppynet => write!(f, "shibarium-puppynet"),
         }
     }
 }
@@ -96,6 +104,8 @@ impl From<Network> for NetworkFamily {
             Network::Polygon => NetworkFamily::Evm,
             Network::Sei => NetworkFamily::Evm,
             Network::SeiTestnet => NetworkFamily::Evm,
+            Network::Shibarium => NetworkFamily::Evm,
+            Network::ShibariumPuppynet => NetworkFamily::Evm,
         }
     }
 }
@@ -116,6 +126,8 @@ impl Network {
             Network::Polygon,
             Network::Sei,
             Network::SeiTestnet,
+            Network::Shibarium,
+            Network::ShibariumPuppynet,
         ]
     }
 }
@@ -282,6 +294,19 @@ static USDC_SEI_TESTNET: Lazy<USDCDeployment> = Lazy::new(|| {
     })
 });
 
+/// Lazily initialized known USDC deployment on Shibarium mainnet as [`USDCDeployment`].
+static USDC_SHIBARIUM: Lazy<USDCDeployment> = Lazy::new(|| {
+    USDCDeployment(TokenDeployment {
+        asset: TokenAsset {
+            address: address!("0xf010f12dcA0b96D2d6685bf4dB3dbB4Ad500B6Ad").into(),
+            network: Network::Shibarium,
+        },
+        decimals: 6,
+        // Bridged ERC-20 on Shibarium — no native EIP-3009/EIP-712; uses Permit2 instead.
+        eip712: None,
+    })
+});
+
 /// A known USDC deployment as a wrapper around [`TokenDeployment`].
 #[derive(Clone, Debug)]
 pub struct USDCDeployment(pub TokenDeployment);
@@ -343,6 +368,8 @@ impl USDCDeployment {
             Network::Polygon => &USDC_POLYGON,
             Network::Sei => &USDC_SEI,
             Network::SeiTestnet => &USDC_SEI_TESTNET,
+            Network::Shibarium => &USDC_SHIBARIUM,
+            Network::ShibariumPuppynet => &USDC_SHIBARIUM, // reuse mainnet deployment for now
         }
     }
 }

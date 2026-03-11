@@ -306,7 +306,32 @@ pub struct Eip2612Payload {
     pub transfer: Eip2612TransferPayload,
 }
 
-/// EVM payment payload supporting both ERC-3009 and EIP-2612 standards.
+/// Permit2 witness-based transfer payload for Shibarium and other chains
+/// that use Uniswap's Permit2 instead of EIP-3009.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Permit2Payload {
+    /// The token owner who signed the permit
+    pub owner: EvmAddress,
+    /// The intended recipient of the transfer
+    pub to: EvmAddress,
+    /// The token contract address
+    pub token: EvmAddress,
+    /// The amount to transfer
+    pub amount: TokenAmount,
+    /// Permit2 nonce (uint256)
+    pub nonce: TokenAmount,
+    /// Deadline for the permit signature
+    pub deadline: UnixTimestamp,
+    /// Witness hash (keccak256 of witness data, e.g. recipient commitment)
+    pub witness: HexEncodedNonce,
+    /// Witness type string for EIP-712 encoding
+    pub witness_type_string: String,
+    /// The EIP-712 signature over the Permit2 PermitTransferFrom + witness
+    pub signature: EvmSignature,
+}
+
+/// EVM payment payload supporting ERC-3009, EIP-2612, and Permit2 standards.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(untagged)]
 pub enum ExactEvmPayload {
@@ -314,6 +339,8 @@ pub enum ExactEvmPayload {
     Erc3009(Erc3009Payload),
     /// EIP-2612: Two-step permit + transferFrom
     Eip2612(Eip2612Payload),
+    /// Permit2: Uniswap Permit2 witness-based transfer (for Shibarium etc.)
+    Permit2(Permit2Payload),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

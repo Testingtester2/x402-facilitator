@@ -11,6 +11,32 @@ The **x402 facilitator project** aims to create universal x402 payment infrastru
 
 The initial focus is to support USDC and USDT stablecoins across blockchains.
 
+### Shibarium support
+
+This fork adds **Shibarium** (chain ID 109, `eip155:109`) and **Puppynet testnet** (chain ID 157, `eip155:157`) as supported networks.
+
+Shibarium's stablecoins are bridged ERC-20 tokens that do **not** implement EIP-3009 (`transferWithAuthorization`). Instead, settlement uses [Uniswap's Permit2](https://github.com/Uniswap/permit2) contract — already deployed on Shibarium at the canonical address `0x000000000022D473030F116dDEE9F6B43aC78BA3` — which provides signature-based token transfers via `permitTransferFrom` with a witness pattern. This preserves x402's trust-minimization guarantee by locking funds to the intended recipient in the signed message.
+
+**Shibarium token addresses:**
+
+| Token | Address |
+|-------|---------|
+| USDC | `0xf010f12dcA0b96D2d6685bf4dB3dbB4Ad500B6Ad` |
+| USDT | `0xaB082b8ad96c7f47ED70ED971Ce2116469954cFB` |
+| DAI | `0x0726959d22361B79e4D50A5D157b044A83eC870d` |
+
+**To enable Shibarium**, uncomment the RPC URL in your `.env` file:
+
+```dotenv
+# Shibarium mainnet (currently commented out — uncomment to enable)
+RPC_URL_SHIBARIUM=https://www.shibrpc.com
+
+# Shibarium Puppynet testnet
+RPC_URL_SHIBARIUM_PUPPYNET=https://puppynet.shibrpc.com
+```
+
+> **Note:** The Shibarium livenet RPC URL is commented out by default in `.env.example`. Uncomment `RPC_URL_SHIBARIUM` when you are ready to accept payments on Shibarium mainnet.
+
 ## Current software release
 
 * Rust crate for [x402-facilitator](https://crates.io/crates/x402-facilitator)
@@ -90,6 +116,8 @@ Available variables:
 * `RPC_URL_POLYGON_AMOY`: RPC endpoint for Polygon Amoy testnet.
 * `RPC_URL_SEI`: RPC endpoint for Sei mainnet.
 * `RPC_URL_SEI_TESTNET`: RPC endpoint for Sei testnet.
+* `RPC_URL_SHIBARIUM`: RPC endpoint for Shibarium mainnet (uses Permit2 for settlement).
+* `RPC_URL_SHIBARIUM_PUPPYNET`: RPC endpoint for Shibarium Puppynet testnet.
 
 
 ## Observability

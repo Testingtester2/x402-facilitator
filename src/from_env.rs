@@ -23,6 +23,8 @@ pub const ENV_RPC_POLYGON_AMOY: &str = "RPC_URL_POLYGON_AMOY";
 pub const ENV_RPC_POLYGON: &str = "RPC_URL_POLYGON";
 pub const ENV_RPC_SEI: &str = "RPC_URL_SEI";
 pub const ENV_RPC_SEI_TESTNET: &str = "RPC_URL_SEI_TESTNET";
+pub const ENV_RPC_SHIBARIUM: &str = "RPC_URL_SHIBARIUM";
+pub const ENV_RPC_SHIBARIUM_PUPPYNET: &str = "RPC_URL_SHIBARIUM_PUPPYNET";
 
 pub fn rpc_env_name_from_network(network: Network) -> &'static str {
     match network {
@@ -38,6 +40,8 @@ pub fn rpc_env_name_from_network(network: Network) -> &'static str {
         Network::Polygon => ENV_RPC_POLYGON,
         Network::Sei => ENV_RPC_SEI,
         Network::SeiTestnet => ENV_RPC_SEI_TESTNET,
+        Network::Shibarium => ENV_RPC_SHIBARIUM,
+        Network::ShibariumPuppynet => ENV_RPC_SHIBARIUM_PUPPYNET,
     }
 }
 
