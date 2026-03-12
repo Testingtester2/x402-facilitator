@@ -33,13 +33,25 @@ Networks are **dynamically enabled** based on which `RPC_URL_*` environment vari
 
 **USDC** is the primary supported stablecoin, with verified contract addresses on every network above.
 
-Shibarium additionally supports:
+Shibarium (eip155:109) additionally supports all Permit2-compatible ERC-20 tokens in the ecosystem:
 
-| Token | Address |
-|-------|---------|
-| USDC | `0xf010f12dcA0b96D2d6685bf4dB3dbB4Ad500B6Ad` |
-| USDT | `0xaB082b8ad96c7f47ED70ED971Ce2116469954cFB` |
-| DAI | `0x0726959d22361B79e4D50A5D157b044A83eC870d` |
+**Stablecoins**
+
+| Token | Address | Decimals |
+|-------|---------|----------|
+| USDC | `0xf010f12dcA0b96D2d6685bf4dB3dbB4Ad500B6Ad` | 6 |
+| USDT | `0xaB082b8ad96c7f47ED70ED971Ce2116469954cFB` | 6 |
+| DAI | `0x0726959d22361B79e4D50A5D157b044A83eC870d` | 18 |
+
+**Ecosystem Tokens**
+
+| Token | Address | Decimals |
+|-------|---------|----------|
+| SHIB | `0x495eea66B0f8b636D441dC6a98d8F5C3D455C4c0` | 18 |
+| WBONE | `0xC76F4c819D820369Fb2d7C1531aB3Bb18e6fE8d8` | 18 |
+| TREAT | `0x506d8d2d9c715Eb34F514cc3EF48C7aBD19e2bc7` | 18 |
+
+> **Note:** Native BONE (`0x0000000000000000000000000000000000001010`) is the gas token on Shibarium and is **not** compatible with Permit2. Use WBONE (Wrapped BONE) instead for x402 payments.
 
 ## Settlement Methods
 
