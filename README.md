@@ -59,7 +59,7 @@ The facilitator uses the best available method for each network:
 
 - **ERC-3009** (`transferWithAuthorization`) — single-transaction gasless transfers. Used on Base, Polygon, Avalanche, Sei, XDC, XRPL EVM. Supports EOA, EIP-1271 (smart contract wallets), and EIP-6492 (counterfactual wallets).
 - **EIP-2612** (`permit` + `transferFrom`) — two-step fallback for tokens without ERC-3009.
-- **Permit2** (`permitTransferFrom` with witness) — used on Shibarium, where bridged ERC-20 tokens lack EIP-3009. Uses Uniswap's canonical Permit2 contract (`0x000000000022D473030F116dDEE9F6B43aC78BA3`).
+- **Permit2** (Coinbase x402 spec, `assetTransferMethod = "permit2"`) — used on Shibarium, where bridged ERC-20 tokens lack EIP-3009. Settles through the canonical [`x402ExactPermit2Proxy`](https://github.com/coinbase/x402/blob/main/specs/schemes/exact/scheme_exact_evm.md) at `0x402085c248EeA27D92E8b30b2C58ed07f9E20001`, which calls Uniswap's Permit2 (`0x000000000022D473030F116dDEE9F6B43aC78BA3`) `permitWitnessTransferFrom` with a canonical `Witness(address to, uint256 validAfter)`. The witness is enforced on-chain by the proxy, preventing the facilitator from redirecting funds. When the payload includes an EIP-2612 `permit_2612`, the facilitator routes to `settleWithPermit` so Permit2 approval and transfer happen in a single transaction.
 - **Native token** — verifies already-submitted on-chain transactions for native coin transfers (ETH, BONE, AVAX, etc.).
 - **SPL Token Transfer** — Solana-native token transfer with compute budget management.
 
