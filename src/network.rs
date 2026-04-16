@@ -307,6 +307,72 @@ static USDC_SHIBARIUM: Lazy<USDCDeployment> = Lazy::new(|| {
     })
 });
 
+/// Lazily initialized known USDT deployment on Shibarium mainnet.
+static USDT_SHIBARIUM: Lazy<TokenDeployment> = Lazy::new(|| TokenDeployment {
+    asset: TokenAsset {
+        address: address!("0xaB082b8ad96c7f47ED70ED971Ce2116469954cFB").into(),
+        network: Network::Shibarium,
+    },
+    decimals: 6,
+    eip712: None,
+});
+
+/// Lazily initialized known DAI deployment on Shibarium mainnet.
+static DAI_SHIBARIUM: Lazy<TokenDeployment> = Lazy::new(|| TokenDeployment {
+    asset: TokenAsset {
+        address: address!("0x0726959d22361B79e4D50A5D157b044A83eC870d").into(),
+        network: Network::Shibarium,
+    },
+    decimals: 18,
+    eip712: None,
+});
+
+/// Lazily initialized known SHIB deployment on Shibarium mainnet.
+static SHIB_SHIBARIUM: Lazy<TokenDeployment> = Lazy::new(|| TokenDeployment {
+    asset: TokenAsset {
+        address: address!("0x495eea66B0f8b636D441dC6a98d8F5C3D455C4c0").into(),
+        network: Network::Shibarium,
+    },
+    decimals: 18,
+    eip712: None,
+});
+
+/// Lazily initialized known WBONE (Wrapped BONE) deployment on Shibarium mainnet.
+/// This is the wrapped version of the native BONE gas token, compatible with Permit2.
+static WBONE_SHIBARIUM: Lazy<TokenDeployment> = Lazy::new(|| TokenDeployment {
+    asset: TokenAsset {
+        address: address!("0xC76F4c819D820369Fb2d7C1531aB3Bb18e6fE8d8").into(),
+        network: Network::Shibarium,
+    },
+    decimals: 18,
+    eip712: None,
+});
+
+/// Lazily initialized known TREAT deployment on Shibarium mainnet.
+static TREAT_SHIBARIUM: Lazy<TokenDeployment> = Lazy::new(|| TokenDeployment {
+    asset: TokenAsset {
+        address: address!("0x506d8d2d9c715Eb34F514cc3EF48C7aBD19e2bc7").into(),
+        network: Network::Shibarium,
+    },
+    decimals: 18,
+    eip712: None,
+});
+
+/// Returns all known Permit2-compatible token deployments on Shibarium.
+///
+/// This includes stablecoins (USDC, USDT, DAI) and ecosystem tokens (SHIB, WBONE, TREAT).
+/// Note: native BONE (0x…1010) is NOT included as it is the gas token and incompatible with Permit2.
+pub fn shibarium_token_deployments() -> Vec<&'static TokenDeployment> {
+    vec![
+        &USDC_SHIBARIUM.0,
+        &*USDT_SHIBARIUM,
+        &*DAI_SHIBARIUM,
+        &*SHIB_SHIBARIUM,
+        &*WBONE_SHIBARIUM,
+        &*TREAT_SHIBARIUM,
+    ]
+}
+
 /// A known USDC deployment as a wrapper around [`TokenDeployment`].
 #[derive(Clone, Debug)]
 pub struct USDCDeployment(pub TokenDeployment);

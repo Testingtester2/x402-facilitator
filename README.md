@@ -33,13 +33,25 @@ Networks are **dynamically enabled** based on which `RPC_URL_*` environment vari
 
 **USDC** is the primary supported stablecoin, with verified contract addresses on every network above.
 
-Shibarium additionally supports:
+Shibarium (eip155:109) additionally supports all Permit2-compatible ERC-20 tokens in the ecosystem:
 
-| Token | Address |
-|-------|---------|
-| USDC | `0xf010f12dcA0b96D2d6685bf4dB3dbB4Ad500B6Ad` |
-| USDT | `0xaB082b8ad96c7f47ED70ED971Ce2116469954cFB` |
-| DAI | `0x0726959d22361B79e4D50A5D157b044A83eC870d` |
+**Stablecoins**
+
+| Token | Address | Decimals |
+|-------|---------|----------|
+| USDC | `0xf010f12dcA0b96D2d6685bf4dB3dbB4Ad500B6Ad` | 6 |
+| USDT | `0xaB082b8ad96c7f47ED70ED971Ce2116469954cFB` | 6 |
+| DAI | `0x0726959d22361B79e4D50A5D157b044A83eC870d` | 18 |
+
+**Ecosystem Tokens**
+
+| Token | Address | Decimals |
+|-------|---------|----------|
+| SHIB | `0x495eea66B0f8b636D441dC6a98d8F5C3D455C4c0` | 18 |
+| WBONE | `0xC76F4c819D820369Fb2d7C1531aB3Bb18e6fE8d8` | 18 |
+| TREAT | `0x506d8d2d9c715Eb34F514cc3EF48C7aBD19e2bc7` | 18 |
+
+> **Note:** Native BONE (`0x0000000000000000000000000000000000001010`) is the gas token on Shibarium and is **not** compatible with Permit2. Use WBONE (Wrapped BONE) instead for x402 payments.
 
 ## Settlement Methods
 
@@ -47,7 +59,7 @@ The facilitator uses the best available method for each network:
 
 - **ERC-3009** (`transferWithAuthorization`) — single-transaction gasless transfers. Used on Base, Polygon, Avalanche, Sei, XDC, XRPL EVM. Supports EOA, EIP-1271 (smart contract wallets), and EIP-6492 (counterfactual wallets).
 - **EIP-2612** (`permit` + `transferFrom`) — two-step fallback for tokens without ERC-3009.
-- **Permit2** (`permitTransferFrom` with witness) — used on Shibarium, where bridged ERC-20 tokens lack EIP-3009. Uses Uniswap's canonical Permit2 contract (`0x000000000022D473030F116dDEE9F6B43aC78BA3`).
+- **Permit2** (Coinbase x402 spec, `assetTransferMethod = "permit2"`) — used on Shibarium, where bridged ERC-20 tokens lack EIP-3009. Settles through the canonical [`x402ExactPermit2Proxy`](https://github.com/coinbase/x402/blob/main/specs/schemes/exact/scheme_exact_evm.md) at `0x402085c248EeA27D92E8b30b2C58ed07f9E20001`, which calls Uniswap's Permit2 (`0x000000000022D473030F116dDEE9F6B43aC78BA3`) `permitWitnessTransferFrom` with a canonical `Witness(address to, uint256 validAfter)`. The witness is enforced on-chain by the proxy, preventing the facilitator from redirecting funds. When the payload includes an EIP-2612 `permit_2612`, the facilitator routes to `settleWithPermit` so Permit2 approval and transfer happen in a single transaction.
 - **Native token** — verifies already-submitted on-chain transactions for native coin transfers (ETH, BONE, AVAX, etc.).
 - **SPL Token Transfer** — Solana-native token transfer with compute budget management.
 

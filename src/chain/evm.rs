@@ -84,12 +84,18 @@ sol! {
 }
 
 sol! {
-    /// Uniswap Permit2 contract interface for signature-based token transfers.
+    /// Canonical x402ExactPermit2Proxy used for settling Permit2 payments under the
+    /// Coinbase x402 `exact` scheme (`assetTransferMethod = "permit2"`).
+    ///
+    /// The proxy is the authorized spender in the Permit2 signature and enforces a
+    /// canonical `Witness(address to, uint256 validAfter)` so the facilitator
+    /// cannot redirect funds. Witness type string and hash are computed inside
+    /// the proxy — clients only sign the EIP-712 message.
     #[allow(missing_docs)]
     #[allow(clippy::too_many_arguments)]
     #[derive(Debug)]
     #[sol(rpc)]
-    contract Permit2Contract {
+    contract X402ExactPermit2Proxy {
         struct TokenPermissions {
             address token;
             uint256 amount;
@@ -101,17 +107,31 @@ sol! {
             uint256 deadline;
         }
 
-        struct SignatureTransferDetails {
-            address to;
-            uint256 requestedAmount;
+        struct EIP2612Permit {
+            uint256 value;
+            uint256 deadline;
+            bytes32 r;
+            bytes32 s;
+            uint8 v;
         }
 
-        function permitTransferFrom(
+        struct Witness {
+            address to;
+            uint256 validAfter;
+        }
+
+        function settle(
             PermitTransferFrom calldata permit,
-            SignatureTransferDetails calldata transferDetails,
             address owner,
-            bytes32 witness,
-            string calldata witnessTypeString,
+            Witness calldata witness,
+            bytes calldata signature
+        ) external;
+
+        function settleWithPermit(
+            EIP2612Permit calldata permit2612,
+            PermitTransferFrom calldata permit,
+            address owner,
+            Witness calldata witness,
             bytes calldata signature
         ) external;
     }
@@ -123,8 +143,16 @@ const VALIDATOR_ADDRESS: alloy::primitives::Address =
     address!("0xdAcD51A54883eb67D95FAEb2BBfdC4a9a6BD2a3B");
 
 /// Canonical Uniswap Permit2 contract address, deployed at the same address on all chains.
+#[allow(dead_code)]
 const PERMIT2_ADDRESS: alloy::primitives::Address =
     address!("0x000000000022D473030F116dDEE9F6B43aC78BA3");
+
+/// Canonical x402ExactPermit2Proxy address (CREATE2-deployed, identical on every EVM chain
+/// where Permit2 + Arachnid's CREATE2 deployer are present).
+///
+/// See: https://github.com/coinbase/x402/blob/main/specs/schemes/exact/scheme_exact_evm.md
+const X402_EXACT_PERMIT2_PROXY_ADDRESS: alloy::primitives::Address =
+    address!("0x402085c248EeA27D92E8b30b2C58ed07f9E20001");
 
 /// Returns `true` if the given network uses Permit2 for settlement instead of EIP-3009.
 fn is_permit2_network(network: Network) -> bool {
@@ -599,7 +627,36 @@ where
     Ok((owner.into(), transfer_receipt))
 }
 
-/// Verifies a Permit2 payment by simulating the permitTransferFrom call on-chain.
+/// Builds the [`X402ExactPermit2Proxy::PermitTransferFrom`] and
+/// [`X402ExactPermit2Proxy::Witness`] structs from a [`Permit2Payload`].
+fn build_permit2_call_args(
+    payload: &Permit2Payload,
+) -> (
+    X402ExactPermit2Proxy::PermitTransferFrom,
+    X402ExactPermit2Proxy::Witness,
+) {
+    let token_address: Address = payload.token.into();
+    let amount: U256 = payload.amount.into();
+    let to: Address = payload.to.into();
+    let permit = X402ExactPermit2Proxy::PermitTransferFrom {
+        permitted: X402ExactPermit2Proxy::TokenPermissions {
+            token: token_address,
+            amount,
+        },
+        nonce: payload.nonce.into(),
+        deadline: U256::from(payload.deadline.0),
+    };
+    let witness = X402ExactPermit2Proxy::Witness {
+        to,
+        validAfter: U256::from(payload.valid_after.0),
+    };
+    (permit, witness)
+}
+
+/// Verifies a Permit2 payment by simulating the proxy `settle()` call on-chain.
+///
+/// All correctness checks (signature, balance, allowance, witness binding, timing)
+/// are enforced by the proxy + Permit2 contracts during the simulation.
 #[instrument(skip_all, err)]
 async fn verify_permit2_payment<P: Provider>(
     provider: &P,
@@ -609,6 +666,8 @@ async fn verify_permit2_payment<P: Provider>(
     let owner: Address = payload.owner.into();
     let to: Address = payload.to.into();
 
+    // Off-chain destination check — the proxy enforces this on-chain via the
+    // witness, but we surface a clearer error early.
     let expected_to: Address = requirements
         .pay_to
         .clone()
@@ -628,54 +687,57 @@ async fn verify_permit2_payment<P: Provider>(
         return Err(FacilitatorLocalError::InsufficientValue(owner.into()));
     }
 
-    assert_time(
-        owner.into(),
-        UnixTimestamp(0),
-        payload.deadline,
-    )?;
+    assert_time(owner.into(), payload.valid_after, payload.deadline)?;
 
-    // Check token balance
+    // Check on-chain token balance using the generic ERC-20 interface.
     let token_address: Address = payload.token.into();
     let token = USDC::new(token_address, provider);
     assert_enough_balance(&token, &payload.owner, amount_required).await?;
 
-    // Simulate the permitTransferFrom call
-    let permit2 = Permit2Contract::new(PERMIT2_ADDRESS, provider);
-    let permit_struct = Permit2Contract::PermitTransferFrom {
-        permitted: Permit2Contract::TokenPermissions {
-            token: token_address,
-            amount,
-        },
-        nonce: payload.nonce.into(),
-        deadline: U256::from(payload.deadline.0),
-    };
-    let transfer_details = Permit2Contract::SignatureTransferDetails {
-        to,
-        requestedAmount: amount,
-    };
+    // Simulate via the canonical x402ExactPermit2Proxy.
+    let proxy = X402ExactPermit2Proxy::new(X402_EXACT_PERMIT2_PROXY_ADDRESS, provider);
+    let (permit_struct, witness) = build_permit2_call_args(payload);
+    let signature: Bytes = payload.signature.clone().into();
 
-    permit2
-        .permitTransferFrom(
-            permit_struct,
-            transfer_details,
-            owner,
-            FixedBytes(payload.witness.0),
-            payload.witness_type_string.clone(),
-            payload.signature.clone().into(),
-        )
-        .call()
-        .await
-        .map_err(|e| {
-            FacilitatorLocalError::InvalidSignature(
-                owner.into(),
-                format!("Permit2 verification failed: {e:?}"),
-            )
-        })?;
+    if let Some(p2612) = &payload.permit_2612 {
+        let eip2612 = X402ExactPermit2Proxy::EIP2612Permit {
+            value: p2612.value.into(),
+            deadline: U256::from(p2612.deadline.0),
+            r: FixedBytes(p2612.r.0),
+            s: FixedBytes(p2612.s.0),
+            v: p2612.v,
+        };
+        proxy
+            .settleWithPermit(eip2612, permit_struct, owner, witness, signature)
+            .call()
+            .await
+            .map_err(|e| {
+                FacilitatorLocalError::InvalidSignature(
+                    owner.into(),
+                    format!("Permit2 (settleWithPermit) verification failed: {e:?}"),
+                )
+            })?;
+    } else {
+        proxy
+            .settle(permit_struct, owner, witness, signature)
+            .call()
+            .await
+            .map_err(|e| {
+                FacilitatorLocalError::InvalidSignature(
+                    owner.into(),
+                    format!("Permit2 (settle) verification failed: {e:?}"),
+                )
+            })?;
+    }
 
     Ok(owner.into())
 }
 
-/// Settles a Permit2 payment by executing permitTransferFrom on-chain.
+/// Settles a Permit2 payment by calling the x402ExactPermit2Proxy on-chain.
+///
+/// Routes to `settle()` for the standard path, or `settleWithPermit()` when the
+/// payload includes an EIP-2612 authorization to grant the Permit2 allowance in
+/// the same transaction.
 #[instrument(skip_all, err)]
 async fn settle_permit2_payment<P: MetaEvmProvider>(
     provider: &P,
@@ -689,41 +751,43 @@ where
     let token_address: Address = payload.token.into();
     let amount: U256 = payload.amount.into();
 
-    let permit2 = Permit2Contract::new(PERMIT2_ADDRESS, provider.inner());
-    let permit_struct = Permit2Contract::PermitTransferFrom {
-        permitted: Permit2Contract::TokenPermissions {
-            token: token_address,
-            amount,
-        },
-        nonce: payload.nonce.into(),
-        deadline: U256::from(payload.deadline.0),
-    };
-    let transfer_details = Permit2Contract::SignatureTransferDetails {
-        to,
-        requestedAmount: amount,
-    };
+    let proxy = X402ExactPermit2Proxy::new(X402_EXACT_PERMIT2_PROXY_ADDRESS, provider.inner());
+    let (permit_struct, witness) = build_permit2_call_args(payload);
+    let signature: Bytes = payload.signature.clone().into();
 
-    let call = permit2.permitTransferFrom(
-        permit_struct,
-        transfer_details,
-        owner,
-        FixedBytes(payload.witness.0),
-        payload.witness_type_string.clone(),
-        payload.signature.clone().into(),
-    );
+    let calldata: Bytes = if let Some(p2612) = &payload.permit_2612 {
+        let eip2612 = X402ExactPermit2Proxy::EIP2612Permit {
+            value: p2612.value.into(),
+            deadline: U256::from(p2612.deadline.0),
+            r: FixedBytes(p2612.r.0),
+            s: FixedBytes(p2612.s.0),
+            v: p2612.v,
+        };
+        proxy
+            .settleWithPermit(eip2612, permit_struct, owner, witness, signature)
+            .calldata()
+            .clone()
+    } else {
+        proxy
+            .settle(permit_struct, owner, witness, signature)
+            .calldata()
+            .clone()
+    };
 
     let receipt = provider
         .send_transaction(MetaTransaction {
-            to: PERMIT2_ADDRESS,
-            calldata: call.calldata().clone(),
+            to: X402_EXACT_PERMIT2_PROXY_ADDRESS,
+            calldata,
             confirmations: 1,
         })
         .instrument(tracing::info_span!(
-            "settle_permit2_transferFrom",
+            "settle_permit2_proxy",
             owner = %owner,
             to = %to,
             amount = %amount,
             token = %token_address,
+            valid_after = %payload.valid_after,
+            with_permit = payload.permit_2612.is_some(),
             otel.kind = "client",
         ))
         .await?;
@@ -1556,7 +1620,7 @@ async fn assert_valid_payment<P: Provider>(
         ExactEvmPayload::Eip2612(Eip2612Payload { permit, transfer }) => {
             (transfer.to, UnixTimestamp(0), permit.deadline)
         }
-        ExactEvmPayload::Permit2(p) => (p.to, UnixTimestamp(0), p.deadline),
+        ExactEvmPayload::Permit2(p) => (p.to, p.valid_after, p.deadline),
     };
 
     let requirements_to: EvmAddress = requirements

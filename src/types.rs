@@ -308,27 +308,64 @@ pub struct Eip2612Payload {
 
 /// Permit2 witness-based transfer payload for Shibarium and other chains
 /// that use Uniswap's Permit2 instead of EIP-3009.
+///
+/// Conforms to the Coinbase x402 `exact` scheme with `assetTransferMethod = "permit2"`,
+/// settled via the canonical `x402ExactPermit2Proxy` contract
+/// (`0x402085c248EeA27D92E8b30b2C58ed07f9E20001`).
+///
+/// The proxy enforces the `Witness(address to, uint256 validAfter)` pattern,
+/// preventing the facilitator from redirecting funds. The witness type string and
+/// hash are computed on-chain by the proxy — the client only needs to sign the
+/// EIP-712 message over the `PermitTransferFrom` + witness.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Permit2Payload {
-    /// The token owner who signed the permit
+    /// The token owner who signed the permit (payer).
     pub owner: EvmAddress,
-    /// The intended recipient of the transfer
+    /// The intended recipient of the transfer (witness `to`).
     pub to: EvmAddress,
-    /// The token contract address
+    /// The token contract address.
     pub token: EvmAddress,
-    /// The amount to transfer
+    /// The amount to transfer (must equal the permitted amount; proxy is "exact").
     pub amount: TokenAmount,
-    /// Permit2 nonce (uint256)
+    /// Permit2 nonce (uint256).
     pub nonce: TokenAmount,
-    /// Deadline for the permit signature
+    /// Deadline for the permit signature.
     pub deadline: UnixTimestamp,
-    /// Witness hash (keccak256 of witness data, e.g. recipient commitment)
-    pub witness: HexEncodedNonce,
-    /// Witness type string for EIP-712 encoding
-    pub witness_type_string: String,
-    /// The EIP-712 signature over the Permit2 PermitTransferFrom + witness
+    /// Earliest timestamp at which the payment may be settled (witness `validAfter`).
+    /// Defaults to `0` when omitted.
+    #[serde(default = "default_valid_after")]
+    pub valid_after: UnixTimestamp,
+    /// Optional EIP-2612 permit, used to grant Permit2 allowance in the same tx.
+    /// When present, the facilitator calls `settleWithPermit` instead of `settle`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub permit_2612: Option<Permit2612Authorization>,
+    /// The EIP-712 signature over `PermitTransferFrom` + canonical `Witness`.
     pub signature: EvmSignature,
+}
+
+fn default_valid_after() -> UnixTimestamp {
+    UnixTimestamp(0)
+}
+
+/// EIP-2612 permit parameters for `settleWithPermit` on the x402ExactPermit2Proxy.
+///
+/// When supplied alongside a [`Permit2Payload`], the proxy will first attempt to
+/// approve Permit2 as the spender of `value` tokens via the token's EIP-2612
+/// `permit` function, then execute the Permit2 transfer.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Permit2612Authorization {
+    /// Approval amount for Permit2; must equal `amount` in the parent payload.
+    pub value: TokenAmount,
+    /// Permit expiration timestamp.
+    pub deadline: UnixTimestamp,
+    /// ECDSA signature `r` component (32 bytes, hex-encoded).
+    pub r: HexEncodedNonce,
+    /// ECDSA signature `s` component (32 bytes, hex-encoded).
+    pub s: HexEncodedNonce,
+    /// ECDSA recovery byte `v`.
+    pub v: u8,
 }
 
 /// EVM payment payload supporting ERC-3009, EIP-2612, and Permit2 standards.
