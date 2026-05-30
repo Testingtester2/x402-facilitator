@@ -1,4 +1,4 @@
-# x402-facilitator
+# x402-facilitator for SHIBARIUM
 
 Universal [x402 payment protocol](https://www.x402.org/) facilitator for humans and AI agents. Verify and settle crypto payments across multiple blockchains through a single HTTP server.
 
