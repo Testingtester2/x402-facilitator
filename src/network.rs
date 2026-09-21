@@ -435,7 +435,11 @@ impl USDCDeployment {
             Network::Sei => &USDC_SEI,
             Network::SeiTestnet => &USDC_SEI_TESTNET,
             Network::Shibarium => &USDC_SHIBARIUM,
-            Network::ShibariumPuppynet => &USDC_SHIBARIUM, // reuse mainnet deployment for now
+            // Placeholder: this returns the MAINNET USDC address, which is not
+            // deployed on Puppynet. Nothing can settle on chain 157 until Permit2,
+            // the x402 proxy, the validator and a bridged USDC exist there; see the
+            // Puppynet note in README.md.
+            Network::ShibariumPuppynet => &USDC_SHIBARIUM,
         }
     }
 }

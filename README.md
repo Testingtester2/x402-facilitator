@@ -41,13 +41,9 @@ EVM_PRIVATE_KEY=0x<your-private-key>
 RUST_LOG=info
 ```
 
-To test first, point at Puppynet instead:
-
-```env
-RPC_URL_SHIBARIUM_PUPPYNET=https://rpc.puppynet.shib.io
-```
-
 Networks are enabled by which `RPC_URL_*` variables you set — no other configuration. Set several and the same server handles all of them.
+
+> **Puppynet is not usable yet.** `RPC_URL_SHIBARIUM_PUPPYNET` exists and the RPC responds, but none of the required contracts are deployed on chain 157 — no Permit2, no proxy, no validator, and no bridged USDC — so nothing can settle there. Puppynet does have Arachnid's CREATE2 deployer, so the three contracts can be deployed at the same canonical addresses as mainnet; until someone does that, use mainnet.
 
 ### 2. Fund the signer wallet
 
@@ -105,7 +101,7 @@ After that one transaction, every subsequent payment is a signature only — no 
 | Network | Chain ID | Type | Settlement method |
 |---------|----------|------|-------------------|
 | Shibarium | 109 | Mainnet | Permit2 |
-| Shibarium Puppynet | 157 | Testnet | Permit2 |
+| Shibarium Puppynet | 157 | Testnet | Permit2 — **contracts not yet deployed, see above** |
 | Base | 8453 | Mainnet | ERC-3009 / EIP-2612 |
 | Base Sepolia | 84532 | Testnet | ERC-3009 / EIP-2612 |
 | Polygon | 137 | Mainnet | ERC-3009 / EIP-2612 |
