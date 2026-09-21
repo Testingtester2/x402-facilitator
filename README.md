@@ -123,13 +123,20 @@ After that one transaction, every subsequent payment is a signature only — no 
 
 **USDC** is the primary supported stablecoin, with verified contract addresses on every network above.
 
-On Shibarium (eip155:109), Permit2 works with any standard ERC-20, so the ecosystem's bridged stablecoins are all payable:
+Permit2 works with any standard ERC-20, so on Shibarium (eip155:109) the whole ecosystem is payable — stablecoins and Shib tokens alike:
 
 | Token | Address | Decimals |
 |-------|---------|----------|
 | USDC | `0xf010f12dcA0b96D2d6685bf4dB3dbB4Ad500B6Ad` | 6 |
 | USDT | `0xaB082b8ad96c7f47ED70ED971Ce2116469954cFB` | 6 |
 | DAI | `0x0726959d22361B79e4D50A5D157b044A83eC870d` | 18 |
+| SHIB | `0x495eea66B0f8b636D441dC6a98d8F5C3D455C4c0` | 18 |
+| TREAT | `0x506d8d2d9c715Eb34F514cc3EF48C7aBD19e2bc7` | 18 |
+| WBONE | `0xC76F4c819D820369Fb2d7C1531aB3Bb18e6fE8d8` | 18 |
+
+**Native BONE cannot be used as a payment asset.** BONE at `0x0000000000000000000000000000000000001010` is the gas token and exposes no `allowance()`, so Permit2 has no way to move it. Wrap it and pay in WBONE instead — the same constraint that applies to native ETH on Ethereum.
+
+This table is the known-good set, not an allowlist. The asset is taken from the payment requirements, so the facilitator will settle any standard ERC-20 a client asks it to.
 
 ## Settlement methods
 
