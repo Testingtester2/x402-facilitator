@@ -757,6 +757,12 @@ async fn verify_permit2_payment<P: Provider>(
     let token = USDC::new(token_address, provider);
     assert_enough_balance(&token, &payload.owner, amount_required).await?;
 
+    // An EIP-2612 permit grants the Permit2 allowance in the settlement transaction
+    // itself, so only pre-check the standing allowance when there is no permit.
+    if payload.permit_2612.is_none() {
+        assert_enough_permit2_allowance(&token, &payload.owner, amount_required).await?;
+    }
+
     // Simulate via the canonical x402ExactPermit2Proxy.
     let proxy = X402ExactPermit2Proxy::new(X402_EXACT_PERMIT2_PROXY_ADDRESS, provider);
     let (permit_struct, witness) = build_permit2_call_args(payload);
@@ -1450,6 +1456,54 @@ fn assert_time(
         ));
     }
     Ok(())
+}
+
+/// Checks that the payer has granted Permit2 enough ERC-20 allowance to move the payment.
+///
+/// Permit2 pulls funds with `transferFrom`, so every payer needs a one-time
+/// `approve(PERMIT2_ADDRESS, ...)` on the token before their first payment. Without
+/// this pre-check a missing approval only shows up as an opaque revert from the
+/// settlement simulation, which is the single most common first-run failure.
+///
+/// Skipped when the payload carries an EIP-2612 permit, since that grants the
+/// allowance within the same transaction.
+///
+/// # Errors
+/// Returns [`FacilitatorLocalError::InsufficientFunds`] if the allowance is too low.
+/// Returns [`FacilitatorLocalError::ContractCall`] if the allowance query fails.
+#[instrument(skip_all, err, fields(
+    sender = %sender,
+    max_required = %max_amount_required,
+    token_contract = %token_contract.address()
+))]
+async fn assert_enough_permit2_allowance<P: Provider>(
+    token_contract: &USDC::USDCInstance<P>,
+    sender: &EvmAddress,
+    max_amount_required: U256,
+) -> Result<(), FacilitatorLocalError> {
+    let allowance = token_contract
+        .allowance(sender.0, PERMIT2_ADDRESS)
+        .call()
+        .into_future()
+        .instrument(tracing::info_span!(
+            "fetch_permit2_allowance",
+            token_contract = %token_contract.address(),
+            sender = %sender,
+            otel.kind = "client"
+        ))
+        .await
+        .map_err(|e| FacilitatorLocalError::ContractCall(format!("{e:?}")))?;
+
+    if allowance < max_amount_required {
+        Err(FacilitatorLocalError::ContractCall(format!(
+            "payer {sender} has approved Permit2 ({PERMIT2_ADDRESS}) for {allowance} on token {}, \
+             but {max_amount_required} is required; the payer must approve Permit2 on this token \
+             before their first payment",
+            token_contract.address()
+        )))
+    } else {
+        Ok(())
+    }
 }
 
 /// Checks if the payer has enough on-chain token balance to meet the `maxAmountRequired`.
