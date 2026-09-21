@@ -103,6 +103,9 @@ pub enum FacilitatorLocalError {
     /// The `pay_to` recipient in the requirements doesn't match the `to` address in the payload.
     #[error("Incompatible payload receivers (payload: {1}, requirements: {2})")]
     ReceiverMismatch(MixedAddress, String, String),
+    /// The token named in the payload doesn't match the `asset` in the requirements.
+    #[error("Incompatible payload asset (payload: {1}, requirements: {2})")]
+    AssetMismatch(MixedAddress, String, String),
     /// Failed to read a system clock to check timing.
     #[error("Can not get system clock")]
     ClockError(#[source] SystemTimeError),

@@ -653,6 +653,67 @@ fn build_permit2_call_args(
     (permit, witness)
 }
 
+/// Network and scheme consistency checks for the Permit2 path.
+///
+/// The EIP-3009/EIP-2612 path gets these from [`assert_valid_payment`], which the
+/// Permit2 branch returns early and never reaches, so they are applied here instead.
+fn assert_permit2_context(
+    chain: &EvmChain,
+    payload: &PaymentPayload,
+    requirements: &PaymentRequirements,
+) -> Result<(), FacilitatorLocalError> {
+    if payload.network != chain.network {
+        return Err(FacilitatorLocalError::NetworkMismatch(
+            None,
+            chain.network,
+            payload.network,
+        ));
+    }
+    if requirements.network != chain.network {
+        return Err(FacilitatorLocalError::NetworkMismatch(
+            None,
+            chain.network,
+            requirements.network,
+        ));
+    }
+    if payload.scheme != requirements.scheme {
+        return Err(FacilitatorLocalError::SchemeMismatch(
+            None,
+            requirements.scheme,
+            payload.scheme,
+        ));
+    }
+    Ok(())
+}
+
+/// Asserts that the token named in a Permit2 payload is the asset the resource
+/// server asked to be paid in.
+///
+/// Nothing on-chain can catch a mismatch here. The witness binds `to` and
+/// `validAfter` but not the token, and Permit2 only checks that the payer signed
+/// for whatever token the payload itself names. Without this check a payer could
+/// settle in a worthless token of their own and still pass the amount comparison,
+/// which compares raw units and never asks which token they are units of.
+fn assert_permit2_asset(
+    owner: Address,
+    token: Address,
+    requirements: &PaymentRequirements,
+) -> Result<(), FacilitatorLocalError> {
+    let expected: Address = requirements
+        .asset
+        .clone()
+        .try_into()
+        .map_err(|e| FacilitatorLocalError::InvalidAddress(format!("{e:?}")))?;
+    if token != expected {
+        return Err(FacilitatorLocalError::AssetMismatch(
+            owner.into(),
+            token.to_string(),
+            expected.to_string(),
+        ));
+    }
+    Ok(())
+}
+
 /// Verifies a Permit2 payment by simulating the proxy `settle()` call on-chain.
 ///
 /// All correctness checks (signature, balance, allowance, witness binding, timing)
@@ -681,6 +742,9 @@ async fn verify_permit2_payment<P: Provider>(
         ));
     }
 
+    let token_address: Address = payload.token.into();
+    assert_permit2_asset(owner, token_address, requirements)?;
+
     let amount_required: U256 = requirements.max_amount_required.into();
     let amount: U256 = payload.amount.into();
     if amount < amount_required {
@@ -690,7 +754,6 @@ async fn verify_permit2_payment<P: Provider>(
     assert_time(owner.into(), payload.valid_after, payload.deadline)?;
 
     // Check on-chain token balance using the generic ERC-20 interface.
-    let token_address: Address = payload.token.into();
     let token = USDC::new(token_address, provider);
     assert_enough_balance(&token, &payload.owner, amount_required).await?;
 
@@ -946,6 +1009,7 @@ where
                     "Expected Permit2 payload for Permit2 network".to_string(),
                 )),
             };
+            assert_permit2_context(self.chain(), payload, requirements)?;
             let payer = verify_permit2_payment(self.inner(), permit2_payload, requirements).await?;
             return Ok(VerifyResponse::valid(payer));
         }
@@ -1102,6 +1166,7 @@ where
             };
 
             // Run the same validation as verify before settling
+            assert_permit2_context(self.chain(), payload, requirements)?;
             verify_permit2_payment(self.inner(), permit2_payload, requirements).await?;
 
             let (payer, receipt) = settle_permit2_payment(self, permit2_payload).await?;
@@ -1979,6 +2044,102 @@ impl PendingNonceManager {
 mod tests {
     use super::*;
     use alloy::primitives::address;
+
+    /// USDC on Shibarium — what a resource server would normally ask to be paid in.
+    const USDC: Address = address!("0xf010f12dcA0b96D2d6685bf4dB3dbB4Ad500B6Ad");
+    /// Stands in for a token an attacker deploys and mints to themselves.
+    const WORTHLESS: Address = address!("0x00000000000000000000000000000000DeadBeef");
+    const PAYER: Address = address!("0x000000000000000000000000000000000000BEEF");
+
+    fn requirements_for(asset: Address, network: &str, scheme: &str) -> PaymentRequirements {
+        serde_json::from_value(serde_json::json!({
+            "scheme": scheme,
+            "network": network,
+            "maxAmountRequired": "10000000",
+            "resource": "https://example.com/paid",
+            "description": "test",
+            "mimeType": "application/json",
+            "payTo": "0x0000000000000000000000000000000000001234",
+            "maxTimeoutSeconds": 60,
+            "asset": asset.to_string(),
+            "extra": null,
+        }))
+        .expect("valid payment requirements")
+    }
+
+    fn payload_for(network: &str, scheme: &str) -> PaymentPayload {
+        serde_json::from_value(serde_json::json!({
+            "x402Version": 1,
+            "scheme": scheme,
+            "network": network,
+            "payload": {
+                "owner": PAYER.to_string(),
+                "to": "0x0000000000000000000000000000000000001234",
+                "token": USDC.to_string(),
+                "amount": "10000000",
+                "nonce": "1",
+                "deadline": "9999999999",
+                "signature": format!("0x{}", "11".repeat(65)),
+            },
+        }))
+        .expect("valid payment payload")
+    }
+
+    /// A payer must not be able to settle in a token of their own choosing while
+    /// the resource server asked to be paid in something else. The amount check
+    /// compares raw units, so without this an attacker pays 10000000 units of a
+    /// token they minted and satisfies a 10 USDC price.
+    #[test]
+    fn permit2_rejects_asset_substitution() {
+        let requirements = requirements_for(USDC, "shibarium", "exact");
+        let err = assert_permit2_asset(PAYER, WORTHLESS, &requirements)
+            .expect_err("a substituted token must be rejected");
+        match err {
+            FacilitatorLocalError::AssetMismatch(_, got, want) => {
+                assert_eq!(got, WORTHLESS.to_string());
+                assert_eq!(want, USDC.to_string());
+            }
+            other => panic!("expected AssetMismatch, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn permit2_accepts_the_requested_asset() {
+        let requirements = requirements_for(USDC, "shibarium", "exact");
+        assert_permit2_asset(PAYER, USDC, &requirements)
+            .expect("the requested asset must be accepted");
+    }
+
+    #[test]
+    fn permit2_rejects_payload_network_mismatch() {
+        let chain = EvmChain::new(Network::Shibarium, 109);
+        let payload = payload_for("shibarium-puppynet", "exact");
+        let requirements = requirements_for(USDC, "shibarium", "exact");
+        assert!(matches!(
+            assert_permit2_context(&chain, &payload, &requirements),
+            Err(FacilitatorLocalError::NetworkMismatch(..))
+        ));
+    }
+
+    #[test]
+    fn permit2_rejects_requirements_network_mismatch() {
+        let chain = EvmChain::new(Network::Shibarium, 109);
+        let payload = payload_for("shibarium", "exact");
+        let requirements = requirements_for(USDC, "shibarium-puppynet", "exact");
+        assert!(matches!(
+            assert_permit2_context(&chain, &payload, &requirements),
+            Err(FacilitatorLocalError::NetworkMismatch(..))
+        ));
+    }
+
+    #[test]
+    fn permit2_accepts_consistent_context() {
+        let chain = EvmChain::new(Network::Shibarium, 109);
+        let payload = payload_for("shibarium", "exact");
+        let requirements = requirements_for(USDC, "shibarium", "exact");
+        assert_permit2_context(&chain, &payload, &requirements)
+            .expect("a consistent network and scheme must be accepted");
+    }
 
     #[tokio::test]
     async fn test_reset_nonce_clears_cache() {

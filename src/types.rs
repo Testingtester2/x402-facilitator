@@ -1211,6 +1211,10 @@ impl From<FacilitatorLocalError> for VerifyResponse {
                 Some(payer.clone()),
                 FacilitatorErrorReason::FreeForm(format!("receiver_mismatch: {err}")),
             ),
+            FacilitatorLocalError::AssetMismatch(payer, _, _) => (
+                Some(payer.clone()),
+                FacilitatorErrorReason::FreeForm(format!("asset_mismatch: {err}")),
+            ),
             FacilitatorLocalError::ContractCall(msg) => (
                 Some(MixedAddress::Offchain("".to_string())),
                 // if over rate limit in msg, replace it to "RPC endpoint is over rate limit. Please retry again later."
